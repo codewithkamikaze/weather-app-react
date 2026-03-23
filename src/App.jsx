@@ -2,22 +2,57 @@ import { useState, useRef, useEffect } from "react";
 import { weatherIcons } from "./weatherIcons";
 
 import { Toaster } from "react-hot-toast";
-import { showSuccess, showError } from "./toastService";
+import { showSuccess, showError } from "./services/toastService";
+import CurrentWeather from "./components/CurrentWeather";
+import ErrorMessage from "./components/ErrorMessage";
+import Forecast from "./components/Forecast";
+import Skeleton from "./components/Skeletons";
+import CitySearch from "./components/CitySearch";
 
 const GEO_URL = "https://geocoding-api.open-meteo.com/v1/search";
 const FC_URL = "https://api.open-meteo.com/v1/forecast";
 
+// helper debounce
+function debounce(func, delay) {
+  let timer;
+  return (...args) => {
+    clearTimeout(timer);
+    timer = setTimeout(() => func(...args), delay);
+  };
+}
+
 export default function App() {
-  // STATE
   const [city, setCity] = useState("Aleppo");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [data, setData] = useState(null);
   const [place, setPlace] = useState(null);
+  const [suggestions, setSuggestions] = useState([]);
 
   const controllerRef = useRef(null);
+  const inputRef = useRef(null);
 
-  // SEARCH FUNCTION
+  useEffect(() => {
+    inputRef.current?.focus();
+  }, []);
+
+  // FETCH SUGGESTIONS (DEBOUNCED)
+  const fetchSuggestions = debounce(async (query) => {
+    if (!query.trim()) {
+      setSuggestions([]);
+      return;
+    }
+    try {
+      const res = await fetch(
+        `${GEO_URL}?name=${query}&count=5&language=en&format=json`,
+      );
+      const data = await res.json();
+      setSuggestions(data.results || []);
+    } catch {
+      setSuggestions([]);
+    }
+  }, 300);
+
   async function runSearch(cityName) {
     if (!cityName.trim()) {
       setError("Please enter a city name.");
@@ -25,23 +60,19 @@ export default function App() {
       return;
     }
 
-    // cancel previous request
-    if (controllerRef.current) {
-      controllerRef.current.abort();
-    }
-
+    if (controllerRef.current) controllerRef.current.abort();
     const controller = new AbortController();
     controllerRef.current = controller;
 
     setLoading(true);
     setError("");
+    setSuggestions([]);
 
     try {
       const geoRes = await fetch(
         `${GEO_URL}?name=${cityName}&count=1&language=en&format=json`,
         { signal: controller.signal },
       );
-
       const geoData = await geoRes.json();
 
       if (!geoData.results || geoData.results.length === 0) {
@@ -49,16 +80,6 @@ export default function App() {
       }
 
       const placeData = geoData.results[0];
-
-      // smart check: compare names
-      const input = cityName.toLowerCase();
-      const resultName = placeData.name.toLowerCase();
-      if (!resultName.includes(input) && !input.includes(resultName)) {
-        throw new Error(
-          `No accurate match found. Did you mean "${placeData.name}, ${placeData.country}"?`,
-        );
-      }
-
       setPlace(placeData);
 
       const fcRes = await fetch(
@@ -68,14 +89,10 @@ export default function App() {
 
       const weatherData = await fcRes.json();
       setData(weatherData);
-
-      // ✅ Show success toast
       showSuccess(`Weather for ${placeData.name} loaded successfully!`);
     } catch (err) {
       if (err.name === "AbortError") return;
-
       setData(null);
-
       if (err.message.includes("Failed to fetch")) {
         setError("Network error. Check your internet connection.");
         showError("Network error. Check your internet connection.");
@@ -88,45 +105,37 @@ export default function App() {
     }
   }
 
-  // cleanup on unmount
-  useEffect(() => {
-    return () => {
-      if (controllerRef.current) {
-        controllerRef.current.abort();
-      }
-    };
-  }, []);
-
   return (
     <div className="app">
-      {/* Toast container */}
       <Toaster position="top-right" reverseOrder={false} />
 
       <div className="card">
-        <h1>Weather App (Public API)</h1>
-
+        <h1>Weather App (Autocomplete)</h1>
         <div className="muted">
-          Search any city → get current weather + 7-day forecast.
+          Type a city → select from suggestions → get weather.
         </div>
 
-        {/* SEARCH */}
-        <div className="row" style={{ marginTop: 12 }}>
+        {/* CitySearch */}
+
+        <div className="row" style={{ marginTop: 12, position: "relative" }}>
           <input
+            ref={inputRef}
             placeholder="Type a city…"
             value={city}
             onChange={(e) => {
               setCity(e.target.value);
-              if (error) setError(""); // auto-clear error
+              fetchSuggestions(e.target.value);
+            }}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") runSearch(city);
             }}
           />
-
           <button
             onClick={() => runSearch(city)}
             disabled={loading || !city.trim()}
           >
             {loading ? "Searching..." : "Search"}
           </button>
-
           <button
             className="secondary"
             disabled={loading}
@@ -137,96 +146,91 @@ export default function App() {
           >
             Use Aleppo
           </button>
+
+          {/* Suggestions dropdown */}
+          {suggestions.length > 0 && (
+            <div
+              className="suggestions"
+              style={{
+                position: "absolute",
+                top: "44px",
+                left: 0,
+                right: 0,
+                background: "#1a1f30",
+                border: "1px solid rgba(255,255,255,0.1)",
+                borderRadius: "8px",
+                zIndex: 10,
+                maxHeight: "200px",
+                overflowY: "auto",
+              }}
+            >
+              {suggestions.map((s, i) => (
+                <div
+                  key={i}
+                  onClick={() => {
+                    setCity(`${s.name}, ${s.country}`);
+                    setSuggestions([]);
+                    runSearch(s.name);
+                  }}
+                  style={{
+                    padding: "8px 12px",
+                    cursor: "pointer",
+                    borderBottom: "1px solid rgba(255,255,255,0.1)",
+                  }}
+                  onMouseOver={(e) =>
+                    (e.currentTarget.style.background =
+                      "rgba(255,255,255,0.05)")
+                  }
+                  onMouseOut={(e) =>
+                    (e.currentTarget.style.background = "transparent")
+                  }
+                >
+                  {s.name}, {s.country}
+                </div>
+              ))}
+            </div>
+          )}
         </div>
 
-        {/* LOADING */}
-        {loading && (
-          <div className="status">
-            <div className="spinner"></div>
-            <div>Loading…</div>
-          </div>
+        {/*=== CitySearch==== */}
+
+        {/* Loading skeleton */}
+
+        {loading && <Skeleton />}
+
+        {/* ===Loading skeleton==== */}
+
+        {/* Error */}
+
+        {error && (
+          <ErrorMessage
+            error={error}
+            runSearch={runSearch}
+            city={city}
+            loading={loading}
+          />
         )}
 
-        {/* ERROR */}
-        {error && <div className="error">❌ {error}</div>}
+        {/* Error ===*/}
+        {/* Result */}
 
-        {/* RESULT */}
-        {data && place && (
-          <div className="grid">
-            {/* CURRENT */}
-            <div className="card">
-              <strong>
-                {place.name}, {place.country}
-              </strong>
+        {data && place && !loading && (
+          <div className="grid fade-in">
+            {/* CurrentWeather */}
 
-              <div className="muted" style={{ marginTop: 6 }}>
-                Lat/Lon: {place.latitude}, {place.longitude}
-              </div>
+            <CurrentWeather
+              data={data}
+              place={place}
+              weatherIcons={weatherIcons}
+            />
 
-              <div className="big">
-                {data.current.temperature_2m}
-                {data.current_units.temperature_2m}{" "}
-                {weatherIcons[data.current.weathercode] || "❓"}
-              </div>
+            {/* ===CurrentWeather=== */}
 
-              <div>
-                <span className="pill">
-                  Humidity: {data.current.relative_humidity_2m}
-                  {data.current_units.relative_humidity_2m}
-                </span>
+            {/* Forecast */}
 
-                <span className="pill">
-                  Wind: {data.current.wind_speed_10m}{" "}
-                  {data.current_units.wind_speed_10m}
-                </span>
-              </div>
+            <Forecast data={data} weatherIcons={weatherIcons} />
 
-              <div className="muted" style={{ marginTop: 10 }}>
-                Local time: {data.current.time} ({data.timezone})
-              </div>
-            </div>
-
-            {/* FORECAST */}
-            <div className="card">
-              <strong>7-Day Forecast</strong>
-
-              <table>
-                <thead>
-                  <tr>
-                    <th>Date</th>
-                    <th>Min</th>
-                    <th>Max</th>
-                    <th>Rain</th>
-                    <th>Weather</th>
-                  </tr>
-                </thead>
-
-                <tbody>
-                  {data.daily.time.map((day, i) => (
-                    <tr key={i}>
-                      <td>{day}</td>
-                      <td>
-                        {data.daily.temperature_2m_min[i]}
-                        {data.daily_units.temperature_2m_min}
-                      </td>
-                      <td>
-                        {data.daily.temperature_2m_max[i]}
-                        {data.daily_units.temperature_2m_max}
-                      </td>
-                      <td>
-                        {data.daily.precipitation_sum[i]}{" "}
-                        {data.daily_units.precipitation_sum}
-                      </td>
-                      <td>
-                        {data.daily.weathercode?.[i] !== undefined
-                          ? weatherIcons[data.daily.weathercode[i]] || "❓"
-                          : "❓"}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+            {/*===== Forecast ===== */}
           </div>
         )}
       </div>
