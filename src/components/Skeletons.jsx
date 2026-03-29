@@ -1,4 +1,11 @@
+import { useContext } from "react";
+import { WeatherContext } from "../context/WeatherContext";
+
 export default function Skeleton() {
+  const { loading } = useContext(WeatherContext);
+
+  if (!loading) return null;
+
   return (
     <div className="grid fade-in">
       {/* Current Weather Skeleton */}

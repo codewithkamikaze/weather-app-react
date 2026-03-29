@@ -1,77 +1,96 @@
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useContext } from "react";
+import { WeatherContext } from "../context/WeatherContext";
 
-const GEO_URL = "https://geocoding-api.open-meteo.com/v1/search";
+export default function CitySearch() {
+  // 🔹 Get state and functions from WeatherContext
+  const {
+    city,
+    setCity,
+    loading,
+    suggestions,
+    setSuggestions,
+    fetchSuggestions,
+    runSearch,
+  } = useContext(WeatherContext);
 
-// debounce helper
-function debounce(func, delay) {
-  let timer;
-  return (...args) => {
-    clearTimeout(timer);
-    timer = setTimeout(() => func(...args), delay);
-  };
-}
+  // 🔹 Track which suggestion is currently highlighted
+  const [activeIndex, setActiveIndex] = useState(-1);
 
-export default function CitySearch({ onSearch, loading }) {
-  const [city, setCity] = useState("");
-  const [suggestions, setSuggestions] = useState([]);
-
+  // 🔹 Reference to the input element for focus control
   const inputRef = useRef(null);
 
+  // 🔹 Focus input automatically when component mounts
   useEffect(() => {
     inputRef.current?.focus();
   }, []);
 
-  const fetchSuggestions = debounce(async (query) => {
-    if (!query.trim()) {
-      setSuggestions([]);
-      return;
+  // 🔹 Close suggestions dropdown when clicking outside
+  useEffect(() => {
+    function handleClickOutside(e) {
+      if (!e.target.closest(".row")) setSuggestions([]); // here we clear suggestions if clicked outside
     }
-
-    try {
-      const res = await fetch(
-        `${GEO_URL}?name=${query}&count=5&language=en&format=json`,
-      );
-      const data = await res.json();
-      setSuggestions(data.results || []);
-    } catch {
-      setSuggestions([]);
-    }
-  }, 300);
+    document.addEventListener("click", handleClickOutside);
+    return () => document.removeEventListener("click", handleClickOutside);
+  }, [setSuggestions]);
 
   return (
     <div className="row" style={{ marginTop: 12, position: "relative" }}>
-      {/* input */}
+      {/* 🔹 City input field */}
       <input
         ref={inputRef}
         placeholder="Type a city…"
         value={city}
         onChange={(e) => {
-          setCity(e.target.value);
-          fetchSuggestions(e.target.value);
+          setCity(e.target.value); // update city state
+          fetchSuggestions(e.target.value); // fetch autocomplete suggestions
+          setActiveIndex(-1); // reset active index
         }}
         onKeyDown={(e) => {
-          if (e.key === "Enter") onSearch(city);
+          // 🔹 Navigate suggestions using arrow keys
+          if (e.key === "ArrowDown") {
+            e.preventDefault();
+            setActiveIndex((prev) =>
+              prev < suggestions.length - 1 ? prev + 1 : prev,
+            );
+          }
+          if (e.key === "ArrowUp") {
+            e.preventDefault();
+            setActiveIndex((prev) => (prev > 0 ? prev - 1 : prev));
+          }
+          // 🔹 Handle Enter key: select suggestion or run search
+          if (e.key === "Enter") {
+            if (suggestions[activeIndex]) {
+              const s = suggestions[activeIndex];
+              setCity(`${s.name}, ${s.country}`);
+              setSuggestions([]);
+              runSearch(s.name); // here we make search for the selected suggestion
+            } else runSearch(city); // search using typed city
+          }
         }}
       />
 
-      {/* search button */}
-      <button onClick={() => onSearch(city)} disabled={loading || !city.trim()}>
+      {/* 🔹 Search button */}
+      <button
+        onClick={() => runSearch(city)}
+        disabled={loading || !city.trim()} // disable when loading or empty input
+      >
         {loading ? "Searching..." : "Search"}
       </button>
 
-      {/* quick button */}
+      {/* 🔹 Quick select button for example city */}
       <button
         className="secondary"
         disabled={loading}
         onClick={() => {
           setCity("Aleppo");
-          onSearch("Aleppo");
+          setSuggestions([]);
+          runSearch("Aleppo"); // here we make user search for example city "Aleppo"
         }}
       >
         Use Aleppo
       </button>
 
-      {/* suggestions */}
+      {/* 🔹 Suggestions dropdown */}
       {suggestions.length > 0 && (
         <div
           className="suggestions"
@@ -94,13 +113,15 @@ export default function CitySearch({ onSearch, loading }) {
               onClick={() => {
                 setCity(`${s.name}, ${s.country}`);
                 setSuggestions([]);
-                onSearch(s.name);
+                runSearch(s.name); // here we make search for clicked suggestion
               }}
               style={{
                 padding: "8px 12px",
                 cursor: "pointer",
                 borderBottom: "1px solid rgba(255,255,255,0.1)",
+                background: i === activeIndex ? "#2a2f45" : "transparent", // highlight active suggestion
               }}
+              onMouseEnter={() => setActiveIndex(i)} // hover changes active index
             >
               {s.name}, {s.country}
             </div>
