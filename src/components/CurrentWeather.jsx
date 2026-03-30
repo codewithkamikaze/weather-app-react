@@ -21,20 +21,20 @@ export default function CurrentWeather() {
       {/* 🔹 Display current temperature with units */}
       <div style={{ fontSize: "48px", fontWeight: "bold" }}>
         {current.temperature_2m}
-        {data.current_units.temperature_2m}{" "}
+        {data.current_units.temperature_2m}
         {/* here we show the temperature unit */}
       </div>
 
       {/* 🔹 Display weather icon based on weather code */}
       <div style={{ fontSize: "40px", margin: "10px 0" }}>
-        {weatherIcons?.[current.weathercode] || "❓"}{" "}
+        {weatherIcons?.[current.weathercode] || "❓"}
         {/* fallback icon if code missing */}
       </div>
 
       {/* 🔹 Display humidity */}
       <div className="muted">
         💧 Humidity: {current.relative_humidity_2m}
-        {data.current_units.relative_humidity_2m}{" "}
+        {data.current_units.relative_humidity_2m}
         {/* here we show humidity unit */}
       </div>
 

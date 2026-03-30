@@ -57,7 +57,7 @@ export default function Forecast() {
 
               {/* 🔹 Weather icon based on weather code */}
               <td>
-                {weatherIcons?.[data.daily.weathercode[i]] || "❓"}{" "}
+                {weatherIcons?.[data.daily.weathercode[i]] || "❓"}
                 {/* fallback icon */}
               </td>
             </tr>
